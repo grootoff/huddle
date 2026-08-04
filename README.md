@@ -7,18 +7,19 @@ never leave the machine that hosts it.
 
 ```bash
 npm install
-npm run dev          # http://localhost:4000 + your LAN address, printed on boot
+npm run build
+npm start            # http://localhost:4000 + your LAN address, printed on boot
 ```
 
 Hand out the LAN address it prints (e.g. `http://192.168.1.24:4000`). Everyone lands
 on the same page: **Start one** creates a room, **Join a huddle** enters a code.
 
-For real use, build once and run in production mode:
+`npm run dev` exists for working on the code, but **use `npm start` when other people
+are actually joining** — dev mode ships an unminified bundle plus HMR to every phone
+on the network, and Next guards its dev assets by origin.
 
-```bash
-npm run build
-npm start            # PORT=4000 by default
-```
+Needs **Node 24** (the server runs TypeScript directly and uses the built-in
+`node:sqlite`); `npm run dev`/`npm start` check this and tell you if not.
 
 ## What it does
 
@@ -94,6 +95,7 @@ account for almost every failure:
 | `Unknown file extension ".ts"` | Node older than 23.6 — the server runs TypeScript directly | `nvm install 24 && nvm use 24` |
 | `Another next dev server is already running` | a previous run left a lock in `.next/dev`, or one really is running | `rm -rf .next/dev`, or stop the other process |
 | `Port 4000 is already in use` | something else has the port | `lsof -nP -iTCP:4000 -sTCP:LISTEN`, or `PORT=4001 npm run dev` |
+| Opens from another device but never finishes loading | Next blocks its dev assets from unknown origins | handled by `allowedDevOrigins` in `next.config.ts`; restart after changing networks, or just use `npm start` |
 
 Phones on the network cannot reach it? Check the machine's firewall (macOS: System
 Settings → Network → Firewall) and that both devices are on the same subnet — guest
@@ -181,9 +183,14 @@ proxy with basic auth.
 ## Checking it works
 
 ```bash
+npm run check                           # secure-context grep + typecheck
 npm run smoke                           # end-to-end checks against a running server
 npm run guest 8GNYS8UT Priya "hello"    # pretend to be a second device
 ```
+
+One thing no script can check: **open the LAN address in a real browser before you
+trust a change.** `localhost` is a secure context and the LAN IP is not, so a whole
+class of breakage is invisible until you do.
 
 `smoke` drives two real socket clients through create, join, case-insensitive codes,
 chat, replies, reactions, receipts, upload, ranged download, path traversal, delete
@@ -195,10 +202,16 @@ UI when you only have one machine.
 - **It is plain HTTP on your LAN.** The room code is the only secret and it travels in
   the clear, so treat a huddle as private-ish, not confidential, and lock the room once
   everyone is in. Do not port-forward it to the internet as-is — see the hosting section.
-- **Voice notes need a secure context.** Browsers only grant microphone access over
-  https or on `localhost`, so on `http://192.168.…` the mic button explains itself and
-  stops. Everything else (including file upload) works fine. Put it behind a local
-  https proxy such as [caddy](https://caddyserver.com) if you want voice notes on phones.
+- **Plain http is not a "secure context",** and browsers quietly remove APIs there.
+  Everything on `localhost` is a secure context, so these break *only* on the address
+  people actually use — which is why `npm run check` greps for them:
+  - `crypto.randomUUID` is undefined → `clientId()` in `src/lib/id.ts` builds a v4 UUID
+    from `crypto.getRandomValues`, which is not restricted.
+  - `navigator.clipboard` is missing → `copyText()` falls back to `execCommand`.
+  - the microphone is refused outright → the mic button says so and stops. This is the
+    one feature you cannot have over plain http; put it behind a local https proxy such
+    as [caddy](https://caddyserver.com), or deploy it (hosts give you https) if you want
+    voice notes on phones.
 - **Uploaded files are guarded by an unguessable id, not per-request auth.** A room
   member could pass a file link to someone outside the room.
 - **History is kept in plain SQLite** at `data/huddle.db`. Delete the `data/` folder to

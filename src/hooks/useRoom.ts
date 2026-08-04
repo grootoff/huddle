@@ -5,6 +5,7 @@ import { ask, getSocket, type HuddleSocket } from "@/lib/socket";
 import { clearRoom, loadName, loadRoom, saveRoom } from "@/lib/session";
 import { probeMedia, uploadFile } from "@/lib/upload";
 import { TYPING_TTL_MS } from "@/lib/constants";
+import { clientId } from "@/lib/id";
 import type { Attachment, Member, Message, RoomInfo, RoomPeek, RoomState } from "@/lib/types";
 
 export type Phase = "connecting" | "gate" | "joining" | "joined" | "denied";
@@ -328,7 +329,7 @@ export function useRoom(code: string): RoomApi {
     ({ body, replyToId }: { body: string; replyToId?: string | null }) => {
       const text = body.trim();
       if (!text) return;
-      const draft = optimistic(crypto.randomUUID(), text, replyToId ?? null, null);
+      const draft = optimistic(clientId(), text, replyToId ?? null, null);
       setMessages((current) => [...current, draft]);
       void commit(draft, {});
     },
@@ -343,7 +344,7 @@ export function useRoom(code: string): RoomApi {
 
       const meta = { ...(await probeMedia(blob)), ...knownMeta };
       const localUrl = URL.createObjectURL(blob);
-      const id = crypto.randomUUID();
+      const id = clientId();
       const placeholder: Attachment = {
         id: "pending",
         name,

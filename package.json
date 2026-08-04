@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "node scripts/check-node.mjs && NODE_ENV=production node server/index.ts",
     "typecheck": "tsc --noEmit",
+    "check": "node scripts/check-secure-context.mjs && tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "guest": "node scripts/guest.mjs"
   },
