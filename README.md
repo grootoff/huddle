@@ -164,3 +164,7 @@ End-to-end encryption between members, group voice/video over WebRTC (the signal
 is already here), pinned messages, message editing, mDNS so people can type `huddle.local`
 instead of an IP, and a `--tls` flag that mints a local certificate so voice notes work on
 phones too.
+
+## License
+
+[MIT](LICENSE) — do what you like with it, no warranty.
