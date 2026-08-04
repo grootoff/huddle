@@ -6,10 +6,16 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { getBridge } from "@/lib/bridge";
 import { MAX_FILE_BYTES, ROOM_CODE_PATTERN, normalizeRoomCode } from "@/lib/constants";
+import { corsHeaders, preflight } from "@/lib/cors";
 import type { Attachment, AttachmentKind } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Needed when the UI is hosted apart from the backend; a no-op otherwise. */
+export function OPTIONS(request: Request): Response {
+  return preflight(request);
+}
 
 /**
  * Raw-body upload: the client PUTs the file bytes with metadata in headers.
@@ -17,6 +23,10 @@ export const dynamic = "force-dynamic";
  * browser real upload progress (XHR), which multipart + fetch cannot.
  */
 export async function PUT(request: Request): Promise<Response> {
+  const cors = corsHeaders(request);
+  const bad = (status: number, error: string): Response =>
+    Response.json({ error }, { status, headers: cors });
+
   const bridge = getBridge();
   if (!bridge) return bad(503, "Server is still starting up");
 
@@ -86,11 +96,7 @@ export async function PUT(request: Request): Promise<Response> {
   // the database (which lives in the other module graph).
   await writeFile(`${dest}.json`, JSON.stringify({ ...attachment, roomCode, createdAt: Date.now() }), "utf8");
 
-  return Response.json(attachment, { status: 201 });
-}
-
-function bad(status: number, error: string): Response {
-  return Response.json({ error }, { status });
+  return Response.json(attachment, { status: 201, headers: cors });
 }
 
 function decodeHeader(value: string | null): string {

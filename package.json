@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.6.0"
+    "node": ">=23.6.0"
   },
   "scripts": {
-    "dev": "node server/index.ts",
+    "dev": "node scripts/check-node.mjs && node server/index.ts",
     "build": "next build",
-    "start": "NODE_ENV=production node server/index.ts",
+    "start": "node scripts/check-node.mjs && NODE_ENV=production node server/index.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "guest": "node scripts/guest.mjs"

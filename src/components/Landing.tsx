@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { copyText } from "@/lib/clipboard";
+import { IS_SPLIT_DEPLOY, apiUrl } from "@/lib/config";
 import { ask, getSocket } from "@/lib/socket";
 import { listRooms, loadName, saveName, saveRoom, type RecentRoom } from "@/lib/session";
 import {
@@ -39,7 +40,10 @@ export function Landing() {
     // Skip anything stored under an older code format — those rooms are gone.
     setRecent(listRooms().filter((room) => ROOM_CODE_PATTERN.test(room.code)).slice(0, 4));
     getSocket(); // warm the connection while the user types
-    fetch("/api/net")
+    // The "others can reach this at…" hint is a LAN thing; when the UI is hosted
+    // publicly the address is simply this page's own URL, so there is nothing to say.
+    if (IS_SPLIT_DEPLOY) return;
+    fetch(apiUrl("/api/net"))
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { origin?: string; servedOverLan?: boolean } | null) => {
         if (data?.origin) setLanUrl(data.origin);

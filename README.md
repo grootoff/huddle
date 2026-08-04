@@ -84,18 +84,35 @@ bridge (`src/lib/bridge.ts`) instead of opening a second connection.
 
 Rooms nobody has opened for two days are dropped automatically, files included.
 
+## If it will not start
+
+`npm run dev` checks your Node version first and explains itself, but three things
+account for almost every failure:
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `Unknown file extension ".ts"` | Node older than 23.6 — the server runs TypeScript directly | `nvm install 24 && nvm use 24` |
+| `Another next dev server is already running` | a previous run left a lock in `.next/dev`, or one really is running | `rm -rf .next/dev`, or stop the other process |
+| `Port 4000 is already in use` | something else has the port | `lsof -nP -iTCP:4000 -sTCP:LISTEN`, or `PORT=4001 npm run dev` |
+
+Phones on the network cannot reach it? Check the machine's firewall (macOS: System
+Settings → Network → Firewall) and that both devices are on the same subnet — guest
+Wi-Fi networks usually isolate clients from each other.
+
 ## Hosting it somewhere other than your laptop
 
-**Netlify and Vercel cannot run this**, and no config file will change that. Huddle is a
-single long-lived process that holds open WebSocket connections, keeps presence in
-memory, and writes SQLite plus uploaded files to a disk. Those platforms run stateless
-serverless functions: `server/index.ts` never boots, Functions do not accept WebSocket
-upgrades, and the filesystem is thrown away between invocations. The symptom is exactly
-what you would expect — the page loads and "create room" hangs, because the socket never
-connects.
+**Netlify and Vercel cannot run the backend.** Huddle is a single long-lived process that
+holds open WebSocket connections, keeps presence in memory, and writes SQLite plus
+uploaded files to a disk. Those platforms run stateless serverless functions:
+`server/index.ts` never boots, Functions do not accept WebSocket upgrades, and the
+filesystem is thrown away between invocations. Deploy the repo to Netlify as-is and you
+get a page that loads and then hangs on "create room", because the socket never connects.
 
-What works is anything that runs a container with a volume. A `Dockerfile` and a
-`fly.toml` are included:
+They *can* host the UI, though. See "Netlify (or any static host) for the UI" below.
+
+### A container host runs the whole thing
+
+This is the simple path. A `Dockerfile` and a `fly.toml` are included:
 
 ```bash
 fly launch --no-deploy                        # reads fly.toml
@@ -121,6 +138,40 @@ less work than deploying and keeps the data local:
 ```bash
 cloudflared tunnel --url http://localhost:4000     # or: ngrok http 4000
 ```
+
+### Netlify (or any static host) for the UI
+
+If the URL has to be `something.netlify.app`, host the UI there and point it at a backend
+that can hold sockets open. `netlify.toml` is included; two environment variables connect
+the halves:
+
+```bash
+# On Netlify — Site configuration → Environment variables. Read at BUILD time,
+# so redeploy after changing it.
+NEXT_PUBLIC_HUDDLE_SERVER=https://huddle.fly.dev
+
+# On the backend (Fly/Railway/VPS/tunnel) — exact origin, no trailing slash.
+HUDDLE_ALLOWED_ORIGINS=https://trademohuddle.netlify.app
+```
+
+With those set, the browser loads the page from Netlify and opens its socket, uploads and
+downloads against the backend; the invite QR still points at the Netlify URL, because that
+is where people should land. Without `HUDDLE_ALLOWED_ORIGINS` the backend refuses the
+cross-origin request and the room never opens — that allowlist is never `*`, because the
+upload endpoint trusts a session token sent in a header.
+
+Verify a pair before handing the link out:
+
+```bash
+SMOKE_UI_ORIGIN=https://trademohuddle.netlify.app npm run smoke https://huddle.fly.dev
+```
+
+You still need the backend host. There is no arrangement in which Netlify alone runs this
+app — that would mean replacing Socket.IO with a hosted pub/sub (Ably, Pusher, Supabase
+Realtime), SQLite with a serverless database (Turso keeps the SQL, Neon means rewriting
+it), and disk uploads with presigned uploads to object storage, since a function body caps
+out around 6 MB. That is a different application with three new dependencies, and it gives
+up the premise that your conversation never leaves your own machine.
 
 Either way, remember that a publicly reachable Huddle is open to anyone who has a room
 code, and any visitor can create rooms and upload up to 100 MB per file on your disk. On

@@ -25,11 +25,19 @@ const server = createServer((req, res) => {
 server.requestTimeout = 0;
 server.headersTimeout = 60_000;
 
+// Set when the UI is hosted apart from this backend (e.g. Netlify + Fly).
+const allowedOrigins = (process.env.HUDDLE_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((value) => value.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
 const io = new Server(server, {
   // Media never travels over the socket — only JSON metadata does.
   maxHttpBufferSize: 256 * 1024,
   pingInterval: 20_000,
   pingTimeout: 20_000,
+  // Left undefined for a LAN install, which keeps the socket same-origin only.
+  cors: allowedOrigins.length ? { origin: allowedOrigins, credentials: false } : undefined,
 });
 
 attachSocketServer(io);
@@ -58,6 +66,14 @@ const janitor = setInterval(
 );
 janitor.unref();
 
+server.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code !== "EADDRINUSE") throw error;
+  console.error(`\n  Port ${port} is already in use.\n`);
+  console.error(`    lsof -nP -iTCP:${port} -sTCP:LISTEN     # see what has it`);
+  console.error(`    PORT=${port + 1} npm run dev              # or just use another port\n`);
+  process.exit(1);
+});
+
 server.listen(port, "0.0.0.0", () => {
   const urls = ["localhost", ...lanAddresses()].map((host) => `http://${host}:${port}`);
   const width = Math.max(...urls.map((u) => u.length)) + 4;
@@ -70,7 +86,11 @@ server.listen(port, "0.0.0.0", () => {
     console.log(`  │${label}${url}${" ".repeat(width - url.length - 2)}│`);
   });
   console.log(`  └${line}┘`);
-  console.log(`\n  Share a LAN address above with anyone on this Wi-Fi.\n`);
+  console.log(`\n  Share a LAN address above with anyone on this Wi-Fi.`);
+  if (allowedOrigins.length) {
+    console.log(`  Also accepting a UI hosted at: ${allowedOrigins.join(", ")}`);
+  }
+  console.log();
 });
 
 const shutdown = (signal: string): void => {
