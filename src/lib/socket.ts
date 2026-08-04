@@ -1,7 +1,6 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
-import { SERVER_ORIGIN } from "./config";
 import type { ClientToServerEvents, ServerToClientEvents } from "./types";
 
 export type HuddleSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -14,9 +13,8 @@ let instance: HuddleSocket | null = null;
  */
 export function getSocket(): HuddleSocket {
   if (!instance) {
-    // No URL = same origin, same port as the page (see server/index.ts). A URL
-    // points a statically hosted UI at a backend that can hold sockets open.
-    instance = io(SERVER_ORIGIN || undefined, {
+    // No URL: same origin, same port as the page — see server/index.ts.
+    instance = io({
       transports: ["websocket", "polling"],
       reconnectionDelay: 400,
       reconnectionDelayMax: 4000,

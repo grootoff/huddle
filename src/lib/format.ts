@@ -1,5 +1,3 @@
-import { apiUrl } from "./config";
-
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
@@ -76,5 +74,5 @@ export function linkify(text: string): Array<{ type: "text" | "link"; value: str
 }
 
 export function fileUrl(roomCode: string, attachmentId: string, download = false): string {
-  return apiUrl(`/api/files/${roomCode}/${attachmentId}${download ? "?download=1" : ""}`);
+  return `/api/files/${roomCode}/${attachmentId}${download ? "?download=1" : ""}`;
 }

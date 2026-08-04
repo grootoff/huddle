@@ -12,21 +12,12 @@ import { io } from "socket.io-client";
 
 const ORIGIN = process.argv[2] ?? "http://localhost:4000";
 /**
- * Set to the origin of a separately hosted UI to also exercise the split
- * deployment path, e.g.
- *   SMOKE_UI_ORIGIN=https://trademohuddle.netlify.app npm run smoke
- * The server must have been started with the same value in HUDDLE_ALLOWED_ORIGINS.
- */
-const UI_ORIGIN = process.env.SMOKE_UI_ORIGIN ?? "";
-/**
- * Size-limit checks push a whole file over the cap, so they are opt-in. Run them
- * cheaply against a server started with small limits:
- *   NEXT_PUBLIC_HUDDLE_MAX_FILE_MB=1 NEXT_PUBLIC_HUDDLE_ROOM_QUOTA_MB=2 npm start
- *   SMOKE_LIMITS=1 SMOKE_MAX_FILE_MB=1 SMOKE_ROOM_QUOTA_MB=2 npm run smoke
+ * The size-limit checks push more than 100 MB per request and fill a room to its
+ * 1 GB quota, so they are opt-in: SMOKE_LIMITS=1 npm run smoke. Expect a few
+ * minutes and ~1 GB of temporary disk.
  */
 const CHECK_LIMITS = process.env.SMOKE_LIMITS === "1";
-const CAP_MB = Number(process.env.SMOKE_MAX_FILE_MB ?? 100);
-const QUOTA_MB = Number(process.env.SMOKE_ROOM_QUOTA_MB ?? 1024);
+const { MAX_FILE_MB: CAP_MB, ROOM_QUOTA_MB: QUOTA_MB } = await import("../src/lib/constants.ts");
 
 let passed = 0;
 const check = (label, fn) => {
@@ -232,59 +223,6 @@ const run = async () => {
 
   const missing = await fetch(`${ORIGIN}/api/files/${code}/../../package.json`);
   check("path traversal in a file id is refused", () => assert.ok(missing.status === 404 || missing.status === 400));
-
-  /* ----------------------- split deployment (optional) --------------------- */
-
-  if (UI_ORIGIN) {
-    const allowed = await fetch(`${ORIGIN}/api/upload`, {
-      method: "OPTIONS",
-      headers: { origin: UI_ORIGIN, "access-control-request-method": "PUT" },
-    });
-    check("preflight allows the configured UI origin", () => {
-      assert.equal(allowed.status, 204);
-      assert.equal(allowed.headers.get("access-control-allow-origin"), UI_ORIGIN);
-      assert.match(allowed.headers.get("access-control-allow-headers") ?? "", /x-huddle-token/);
-    });
-
-    const refused = await fetch(`${ORIGIN}/api/upload`, {
-      method: "OPTIONS",
-      headers: { origin: "https://evil.example", "access-control-request-method": "PUT" },
-    });
-    check("preflight refuses every other origin", () => assert.equal(refused.status, 403));
-
-    const crossUpload = await fetch(`${ORIGIN}/api/upload`, {
-      method: "PUT",
-      headers: {
-        origin: UI_ORIGIN,
-        "content-type": "text/plain",
-        "x-huddle-room": code,
-        "x-huddle-token": joined.token,
-        "x-huddle-name": "cross-origin.txt",
-      },
-      body: Buffer.from("hosted UI, remote backend"),
-    });
-    const crossAttachment = await crossUpload.json();
-    check("cross-origin upload works and echoes the origin", () => {
-      assert.equal(crossUpload.status, 201);
-      assert.equal(crossUpload.headers.get("access-control-allow-origin"), UI_ORIGIN);
-      assert.equal(crossAttachment.name, "cross-origin.txt");
-    });
-
-    const qr = await fetch(`${ORIGIN}/api/net?code=${code}&origin=${encodeURIComponent(UI_ORIGIN)}`, {
-      headers: { origin: UI_ORIGIN },
-    });
-    const net = await qr.json();
-    check("invite link points at the hosted UI, not the backend", () => {
-      assert.equal(net.joinUrl, `${UI_ORIGIN}/r/${code}`);
-      assert.ok(net.qr.startsWith("data:image/png;base64,"));
-    });
-
-    const spoofed = await fetch(`${ORIGIN}/api/net?code=${code}&origin=javascript:alert(1)`);
-    const spoofedNet = await spoofed.json();
-    check("a non-http advertised origin is ignored", () =>
-      assert.ok(!spoofedNet.joinUrl.startsWith("javascript:")),
-    );
-  }
 
   /* ------------------------------- moderation ----------------------------- */
 

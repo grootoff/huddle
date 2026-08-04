@@ -1,6 +1,5 @@
 "use client";
 
-import { apiUrl } from "./config";
 import { MAX_FILE_BYTES, MAX_FILE_MB } from "./constants";
 import type { Attachment } from "./types";
 
@@ -35,7 +34,7 @@ export function uploadFile(args: {
       return;
     }
 
-    xhr.open("PUT", apiUrl("/api/upload"), true);
+    xhr.open("PUT", "/api/upload", true);
     xhr.setRequestHeader("Content-Type", args.blob.type || "application/octet-stream");
     xhr.setRequestHeader("x-huddle-room", args.roomCode);
     xhr.setRequestHeader("x-huddle-token", args.token);

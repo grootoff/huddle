@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { copyText } from "@/lib/clipboard";
-import { IS_SPLIT_DEPLOY, apiUrl } from "@/lib/config";
 import { prettyRoomCode } from "@/lib/constants";
 import { CopyIcon } from "./icons";
 import { Modal, Spinner, cx } from "./ui";
@@ -35,9 +34,7 @@ export function InviteSheet({
   useEffect(() => {
     if (!open || net) return;
     let cancelled = false;
-    // The link people should open is this page's origin, which is not the backend
-    // origin when the UI is hosted separately.
-    fetch(apiUrl(`/api/net?code=${code}&origin=${encodeURIComponent(window.location.origin)}`))
+    fetch(`/api/net?code=${code}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("net"))))
       .then((data: NetInfo) => {
         if (!cancelled) setNet(data);
@@ -97,12 +94,6 @@ export function InviteSheet({
                   network.
                 </p>
               )}
-              {IS_SPLIT_DEPLOY && (
-                <p className="rounded-lg bg-zinc-100 px-3 py-2 text-center text-[11px] text-zinc-500 dark:bg-zinc-800">
-                  This huddle is reachable from anywhere, not just your Wi-Fi. The code is the only thing keeping it
-                  private.
-                </p>
-              )}
               {net.alternates.length > 1 && (
                 <details className="w-full text-xs text-zinc-500">
                   <summary className="cursor-pointer text-center">Other addresses on this machine</summary>
@@ -126,9 +117,7 @@ export function InviteSheet({
         </div>
 
         <p className="text-center text-[11px] text-zinc-400">
-          {IS_SPLIT_DEPLOY
-            ? `${roomName} lives on the machine running the Huddle backend.`
-            : `${roomName} lives only on this machine — nothing is uploaded to the internet.`}
+          {roomName} lives only on this machine — nothing is uploaded to the internet.
         </p>
       </div>
     </Modal>

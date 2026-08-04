@@ -25,19 +25,12 @@ const server = createServer((req, res) => {
 server.requestTimeout = 0;
 server.headersTimeout = 60_000;
 
-// Set when the UI is hosted apart from this backend (e.g. Netlify + Fly).
-const allowedOrigins = (process.env.HUDDLE_ALLOWED_ORIGINS ?? "")
-  .split(",")
-  .map((value) => value.trim().replace(/\/+$/, ""))
-  .filter(Boolean);
-
 const io = new Server(server, {
   // Media never travels over the socket — only JSON metadata does.
   maxHttpBufferSize: 256 * 1024,
   pingInterval: 20_000,
   pingTimeout: 20_000,
-  // Left undefined for a LAN install, which keeps the socket same-origin only.
-  cors: allowedOrigins.length ? { origin: allowedOrigins, credentials: false } : undefined,
+  // No cors option: same-origin only, which is all a LAN install needs.
 });
 
 attachSocketServer(io);
@@ -86,11 +79,7 @@ server.listen(port, "0.0.0.0", () => {
     console.log(`  │${label}${url}${" ".repeat(width - url.length - 2)}│`);
   });
   console.log(`  └${line}┘`);
-  console.log(`\n  Share a LAN address above with anyone on this Wi-Fi.`);
-  if (allowedOrigins.length) {
-    console.log(`  Also accepting a UI hosted at: ${allowedOrigins.join(", ")}`);
-  }
-  console.log();
+  console.log(`\n  Share a LAN address above with anyone on this Wi-Fi.\n`);
 });
 
 const shutdown = (signal: string): void => {

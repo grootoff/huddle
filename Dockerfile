@@ -1,6 +1,9 @@
-# Huddle needs a long-lived process (WebSockets + SQLite + a disk), so it ships as
-# a container rather than as serverless functions. Any host that runs a container
-# with a persistent volume works: Fly.io, Railway, Render, a VPS, a Raspberry Pi.
+# Optional: for running Huddle on an always-on machine on your own network — a home
+# server, a NAS, a Raspberry Pi — instead of a laptop. Mount a volume at /data or
+# the chat history and uploads disappear with the container.
+#
+#   docker build -t huddle .
+#   docker run -p 4000:4000 -v huddle-data:/data huddle
 
 FROM node:24-alpine AS deps
 WORKDIR /app
