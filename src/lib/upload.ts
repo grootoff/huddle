@@ -1,7 +1,7 @@
 "use client";
 
 import { apiUrl } from "./config";
-import { MAX_FILE_BYTES } from "./constants";
+import { MAX_FILE_BYTES, MAX_FILE_MB } from "./constants";
 import type { Attachment } from "./types";
 
 export interface UploadHandle {
@@ -31,7 +31,7 @@ export function uploadFile(args: {
 
   const done = new Promise<Attachment>((resolve, reject) => {
     if (args.blob.size > MAX_FILE_BYTES) {
-      reject(new Error("That file is larger than 100 MB"));
+      reject(new Error(`That file is larger than ${MAX_FILE_MB} MB`));
       return;
     }
 
@@ -64,7 +64,14 @@ export function uploadFile(args: {
       }
     };
 
-    xhr.onerror = () => reject(new Error("Upload failed — is the host still on this network?"));
+    xhr.onerror = () => {
+      // A server that rejects early (too large, room full) may close the connection
+      // while we are still sending, which surfaces here rather than in onload.
+      if (xhr.status === 413) reject(new Error(`That file is larger than ${MAX_FILE_MB} MB`));
+      else if (xhr.status === 507) reject(new Error("This huddle has run out of space"));
+      else if (xhr.status >= 400) reject(new Error(`Upload rejected (${xhr.status})`));
+      else reject(new Error("Upload failed — is the host still on this network?"));
+    };
     xhr.onabort = () => reject(new Error("Upload cancelled"));
     xhr.send(args.blob);
   });

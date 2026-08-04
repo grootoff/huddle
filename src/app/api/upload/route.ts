@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { getBridge } from "@/lib/bridge";
-import { MAX_FILE_BYTES, ROOM_CODE_PATTERN, normalizeRoomCode } from "@/lib/constants";
+import { ROOM_CODE_PATTERN, normalizeRoomCode } from "@/lib/constants";
+import { maxFileBytes, maxFileMb, roomQuotaBytes, roomQuotaMb } from "@/lib/limits";
 import { corsHeaders, preflight } from "@/lib/cors";
 import type { Attachment, AttachmentKind } from "@/lib/types";
 
@@ -37,8 +38,12 @@ export async function PUT(request: Request): Promise<Response> {
   if (!bridge.roomExists(roomCode)) return bad(404, "That huddle no longer exists");
   if (!token || !bridge.memberIdForToken(roomCode, token)) return bad(401, "Join the huddle before uploading");
 
+  // Read per request: these come from plain env vars, so a restart is enough.
+  const fileCap = maxFileBytes();
+  const quota = roomQuotaBytes();
+
   const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > MAX_FILE_BYTES) return bad(413, "That file is larger than 100 MB");
+  if (declared > fileCap) return bad(413, `That file is larger than ${maxFileMb()} MB`);
   if (!request.body) return bad(400, "Empty upload");
 
   const mime = (request.headers.get("x-huddle-mime") || request.headers.get("content-type") || "application/octet-stream")
@@ -49,14 +54,28 @@ export async function PUT(request: Request): Promise<Response> {
   const id = randomUUID();
   const dir = path.join(bridge.uploadDir, roomCode);
   const dest = path.join(dir, id);
+
+  // A per-file cap bounds one upload, not a room: many legal files still fill the
+  // disk. Checked before the write, and again while the bytes arrive.
+  const used = quota > 0 ? await directorySize(dir) : 0;
+  const remaining = quota > 0 ? quota - used : Number.POSITIVE_INFINITY;
+  if (remaining <= 0) return bad(507, `This huddle has used all ${roomQuotaMb()} MB of its space`);
+  if (declared > remaining) {
+    return bad(507, `Only ${Math.floor(remaining / (1024 * 1024))} MB left in this huddle`);
+  }
+
   await mkdir(dir, { recursive: true });
 
   let bytes = 0;
   const meter = new Transform({
     transform(chunk, _encoding, done) {
       bytes += chunk.length;
-      if (bytes > MAX_FILE_BYTES) {
+      if (bytes > fileCap) {
         done(new Error("TOO_LARGE"));
+        return;
+      }
+      if (bytes > remaining) {
+        done(new Error("QUOTA_FULL"));
         return;
       }
       done(null, chunk);
@@ -71,7 +90,12 @@ export async function PUT(request: Request): Promise<Response> {
     );
   } catch (error) {
     await rm(dest, { force: true });
-    if (error instanceof Error && error.message === "TOO_LARGE") return bad(413, "That file is larger than 100 MB");
+    if (error instanceof Error && error.message === "TOO_LARGE") {
+      return bad(413, `That file is larger than ${maxFileMb()} MB`);
+    }
+    if (error instanceof Error && error.message === "QUOTA_FULL") {
+      return bad(507, `This huddle has used all ${roomQuotaMb()} MB of its space`);
+    }
     console.error("[huddle] upload failed:", error);
     return bad(500, "Upload failed");
   }
@@ -97,6 +121,23 @@ export async function PUT(request: Request): Promise<Response> {
   await writeFile(`${dest}.json`, JSON.stringify({ ...attachment, roomCode, createdAt: Date.now() }), "utf8");
 
   return Response.json(attachment, { status: 201, headers: cors });
+}
+
+/** Bytes a room is holding. Rooms are small, so a readdir per upload is fine. */
+async function directorySize(dir: string): Promise<number> {
+  let total = 0;
+  try {
+    for (const entry of await readdir(dir)) {
+      try {
+        total += (await stat(path.join(dir, entry))).size;
+      } catch {
+        /* raced with a delete */
+      }
+    }
+  } catch {
+    return 0; // room has no uploads yet
+  }
+  return total;
 }
 
 function decodeHeader(value: string | null): string {

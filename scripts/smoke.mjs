@@ -18,10 +18,21 @@ const ORIGIN = process.argv[2] ?? "http://localhost:4000";
  * The server must have been started with the same value in HUDDLE_ALLOWED_ORIGINS.
  */
 const UI_ORIGIN = process.env.SMOKE_UI_ORIGIN ?? "";
+/**
+ * Size-limit checks push a whole file over the cap, so they are opt-in. Run them
+ * cheaply against a server started with small limits:
+ *   NEXT_PUBLIC_HUDDLE_MAX_FILE_MB=1 NEXT_PUBLIC_HUDDLE_ROOM_QUOTA_MB=2 npm start
+ *   SMOKE_LIMITS=1 SMOKE_MAX_FILE_MB=1 SMOKE_ROOM_QUOTA_MB=2 npm run smoke
+ */
+const CHECK_LIMITS = process.env.SMOKE_LIMITS === "1";
+const CAP_MB = Number(process.env.SMOKE_MAX_FILE_MB ?? 100);
+const QUOTA_MB = Number(process.env.SMOKE_ROOM_QUOTA_MB ?? 1024);
 
 let passed = 0;
 const check = (label, fn) => {
-  fn();
+  // Must be synchronous: an async callback would swallow its own assertion.
+  const result = fn();
+  if (result instanceof Promise) throw new Error(`check("${label}") passed an async function`);
   passed += 1;
   console.log(`  ok  ${label}`);
 };
@@ -106,11 +117,8 @@ const run = async () => {
     assert.equal(joined.members.length, 2);
     assert.ok(joined.messages.length >= 1);
   });
-  check("host is told about the arrival", async () => {
-    assert.ok(hostSawJoin);
-  });
   const joinNotice = await hostSawJoin;
-  check("arrival is a system message", () => {
+  check("host is told about the arrival, as a system message", () => {
     assert.equal(joinNotice.kind, "system");
     assert.match(joinNotice.body, /Guesty joined/);
   });
@@ -295,8 +303,8 @@ const run = async () => {
 
   const lockNotice = nextEvent(guest, "room:patch");
   host.emit("host:lock", true);
-  check("host can lock the room", async () => assert.equal((await lockNotice).locked, true));
-  await lockNotice;
+  const locked = await lockNotice;
+  check("host can lock the room", () => assert.equal(locked.locked, true));
 
   const stranger = await connect();
   await expectFailure(ask(stranger, "room:join", { code, displayName: "Late" }), "locked");
@@ -316,8 +324,8 @@ const run = async () => {
 
   const kickedNotice = nextEvent(guest, "kicked");
   await ask(host, "host:kick", joined.me.id);
-  check("host removes the guest", async () => assert.match(await kickedNotice, /removed/i));
-  await kickedNotice;
+  const kickReason = await kickedNotice;
+  check("host removes the guest", () => assert.match(kickReason, /removed/i));
 
   await expectFailure(
     ask(guest, "room:join", { code, displayName: "Guesty", token: joined.token }),
@@ -333,6 +341,72 @@ const run = async () => {
     return (await Promise.all(flood)).some((r) => typeof r === "string" && /slow down/i.test(r));
   })();
   check("flooding is rate limited", () => assert.equal(rateLimited, true));
+
+  /* ------------------------- size limits (opt-in) -------------------------- */
+
+  if (CHECK_LIMITS) {
+    // A room of its own, so the quota arithmetic is not polluted by earlier uploads.
+    const limitHost = await connect();
+    const limits = await ask(limitHost, "room:create", { displayName: "Limits", roomName: "Limits" });
+    const put = (name, body, extraHeaders = {}) =>
+      fetch(`${ORIGIN}/api/upload`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-huddle-room": limits.room.code,
+          "x-huddle-token": limits.token,
+          "x-huddle-name": name,
+          ...extraHeaders,
+        },
+        body,
+        duplex: "half",
+      });
+
+    const capBytes = Math.round(CAP_MB * 1024 * 1024);
+    const overCap = await put("too-big.bin", Buffer.alloc(capBytes + 64 * 1024, 3));
+    check(`a file over the ${CAP_MB} MB cap is refused`, () => assert.equal(overCap.status, 413));
+
+    // Same, but with no Content-Length at all, so only the stream meter can stop it.
+    let pushed = 0;
+    const chunk = Buffer.alloc(256 * 1024, 4);
+    const streamed = await put(
+      "chunked-too-big.bin",
+      new ReadableStream({
+        pull(controller) {
+          if (pushed >= capBytes + 512 * 1024) return controller.close();
+          controller.enqueue(chunk);
+          pushed += chunk.length;
+        },
+      }),
+    ).catch((error) => ({ status: `client aborted: ${error.message}` }));
+    check("the cap holds without a Content-Length to trust", () => assert.equal(streamed.status, 413));
+
+    // Fill the room to its quota, then expect the next upload to be turned away.
+    const oneUnder = Buffer.alloc(Math.floor(capBytes * 0.9), 5);
+    let accepted = 0;
+    let refusal = null;
+    const attempts = Math.ceil((QUOTA_MB / CAP_MB) * 2) + 3;
+    for (let i = 0; i < attempts; i += 1) {
+      // A quota rejection can land while the body is still going out, which some
+      // clients report as a transport error rather than a status. Both are refusals.
+      const response = await put(`fill-${i}.bin`, oneUnder).catch((error) => ({
+        status: 0,
+        transportError: String(error.message ?? error),
+      }));
+      if (response.status === 201) {
+        accepted += 1;
+        continue;
+      }
+      refusal = response.status === 507 ? "507" : (response.transportError ?? `status ${response.status}`);
+      break;
+    }
+    check(`the ${QUOTA_MB} MB room quota stops further uploads`, () => {
+      assert.ok(refusal, `quota never kicked in after ${attempts} uploads`);
+      assert.ok(accepted > 0, "at least one upload should have been accepted first");
+    });
+
+    limitHost.close();
+  }
 
   host.close();
   guest.close();

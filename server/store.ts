@@ -374,15 +374,28 @@ export function systemMessage(code: string, body: string): Message {
   return getMessage(id)!;
 }
 
-export function deleteMessage(code: string, actorId: string, messageId: string): Message {
+/**
+ * Marks a message deleted and reports the attachment that went with it, so the
+ * caller can remove the bytes: "delete for everyone" that leaves the file sitting
+ * at its URL has not deleted anything.
+ */
+export function deleteMessage(
+  code: string,
+  actorId: string,
+  messageId: string,
+): { message: Message; attachmentId: string | null } {
   const row =
     (db.prepare("SELECT * FROM messages WHERE id = ? AND room_code = ?").get(messageId, code) as Row | undefined) ??
     fail("Message not found");
   const room = getRoom(code) ?? fail("Huddle is gone");
   const isAuthor = str(row.author_id) === actorId;
   if (!isAuthor && room.hostId !== actorId) fail("You can only delete your own messages");
+
+  const raw = str(row.attachment, "");
+  const attachmentId = raw ? ((JSON.parse(raw) as Attachment).id ?? null) : null;
+
   db.prepare("UPDATE messages SET deleted = 1, body = '', attachment = NULL WHERE id = ?").run(messageId);
-  return getMessage(messageId)!;
+  return { message: getMessage(messageId)!, attachmentId };
 }
 
 /* -------------------------- reactions and receipts ------------------------ */

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRoom, type ChatMessage } from "@/hooks/useRoom";
+import { MAX_FILE_MB } from "@/lib/constants";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { InviteSheet } from "./InviteSheet";
@@ -223,7 +224,7 @@ export function RoomClient({ code }: { code: string }) {
           <div className="animate-pop flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-white/70 px-10 py-8 text-white">
             <PaperclipIcon width={30} height={30} />
             <p className="text-base font-medium">Drop to send</p>
-            <p className="text-xs opacity-80">Up to 100 MB per file</p>
+            <p className="text-xs opacity-80">Up to {MAX_FILE_MB} MB per file</p>
           </div>
         </div>
       )}

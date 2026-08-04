@@ -40,7 +40,8 @@ lighter ✓✓ once everyone has read), day separators, message grouping, link d
 unread pill, tab badge and a soft chime when the tab is in the background.
 
 **Files** — drag anywhere, paste from the clipboard, or use the paperclip. Up to 100 MB
-each, streamed straight to disk with real upload progress. Images and videos preview
+each and 1 GB per room by default (both configurable — 2 GB files are tested), streamed
+straight to disk with real upload progress. Images and videos preview
 inline (tap an image for a lightbox), audio gets a compact player, everything else
 becomes a download card. Video and audio support range requests, so seeking works.
 
@@ -61,7 +62,7 @@ all you can realistically read out loud or put on a QR code.
 | --- | --- |
 | UI | Next.js 16 (App Router), React 19, Tailwind v4 |
 | Realtime | Socket.IO 4 attached to the same HTTP server (`server/index.ts`) |
-| Storage | `node:sqlite` (built into Node 22.6+), WAL mode — no native modules to build |
+| Storage | `node:sqlite` (built into Node, unflagged from 24), WAL mode — no native modules to build |
 | Uploads | `PUT /api/upload` with the raw body + metadata headers, streamed to disk |
 | TypeScript | run directly by Node's built-in type stripping — no tsx, no build step for the server |
 
@@ -70,7 +71,7 @@ server/            the long-lived process: http + socket.io + sqlite
   index.ts         boot, LAN banner, janitor, graceful shutdown
   socket.ts        every realtime event, validated with zod and rate limited
   store.ts         all SQL and room rules (the only place that touches the db)
-  ids.ts           codes, tokens, scrypt key hashing, avatar colours
+  ids.ts           room codes, session tokens, avatar colours
 src/
   app/             pages + the three HTTP routes (upload, download, net/QR)
   components/      chat UI
@@ -216,8 +217,44 @@ UI when you only have one machine.
   member could pass a file link to someone outside the room.
 - **History is kept in plain SQLite** at `data/huddle.db`. Delete the `data/` folder to
   wipe everything.
-- Uploads are capped at 100 MB and history at the last 500 messages per room; both live
-  in `src/lib/constants.ts`.
+- **Uploads are capped at 100 MB per file and 1 GB per room** by default. Both are
+  enforced server-side three ways: a `Content-Length` check, a meter on the byte stream
+  (so omitting or lying about the length gains nothing), and a per-room disk total before
+  and during the write. History is capped at the last 500 messages per room.
+
+## Sending very large files
+
+Raise two limits, and be aware they live on different sides:
+
+```bash
+# Server — enforcement. Plain env vars, read at runtime: restart, no rebuild.
+HUDDLE_MAX_FILE_MB=2048 HUDDLE_ROOM_QUOTA_MB=8192 npm start
+
+# Browser — what the UI advertises and refuses against. NEXT_PUBLIC_* is inlined
+# at BUILD time, so this must be set before `npm run build` or the browser will
+# still reject a 2 GB file before sending a single byte.
+NEXT_PUBLIC_HUDDLE_MAX_FILE_MB=2048 NEXT_PUBLIC_HUDDLE_ROOM_QUOTA_MB=8192 npm run build
+```
+
+2 GB has been tested end to end: uploaded in one request, stored byte-exact, served
+back with working range requests. Nothing is buffered — the upload streams request →
+meter → disk and the download streams disk → response, so the server held ~230 MB of
+memory while moving a 2 GB file, the same as it holds while idle.
+
+What actually limits you, in the order you will hit it:
+
+- **The browser's advertised cap** (above). The most common mistake is raising only the
+  server side and wondering why nothing changed.
+- **The room quota**, 1 GB by default — it will refuse a 2 GB file on its own.
+- **Any proxy in front.** Cloudflare's free plan rejects request bodies over 100 MB, and
+  that includes `cloudflared tunnel`, so large uploads fail there no matter what Huddle
+  allows. Fly, Railway and a plain VPS impose no such limit by default.
+- **Time and patience.** 2 GB over typical Wi-Fi is minutes, not seconds. The server
+  disables its request timeout so an upload is never cut off mid-transfer, and progress
+  is shown per file, but there is no resume: a dropped connection starts over.
+- **The hard ceiling** of 4096 MB in `src/lib/limits.ts`, above which browsers and
+  proxies are the real constraint rather than this app.
+- **Disk.** Nothing reserves space; uploads simply fail when the volume is full.
 
 ## Ideas if you keep going
 

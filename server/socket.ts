@@ -1,5 +1,8 @@
+import { rm } from "node:fs/promises";
+import path from "node:path";
 import type { DefaultEventsMap, Server, Socket } from "socket.io";
 import { z } from "zod";
+import { UPLOAD_DIR } from "./db.ts";
 import * as store from "./store.ts";
 import { AppError } from "./store.ts";
 import {
@@ -97,6 +100,18 @@ function parse<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {
     throw new AppError(result.error.issues[0]?.message ?? "That request looked malformed");
   }
   return result.data;
+}
+
+/** Deletes an attachment's bytes and its sidecar. Ids are server-generated UUIDs. */
+async function removeUpload(roomCode: string, attachmentId: string): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/.test(attachmentId)) return;
+  const file = path.join(UPLOAD_DIR, roomCode, attachmentId);
+  try {
+    await rm(file, { force: true });
+    await rm(`${file}.json`, { force: true });
+  } catch (error) {
+    console.error("[huddle] could not remove upload:", error);
+  }
 }
 
 /** A simple token bucket so one tab cannot flood the room. */
@@ -205,8 +220,11 @@ export function attachSocketServer(io: HuddleServer): void {
       reply(ack, () => {
         const { code, memberId } = session();
         if (!allowSmall()) throw new AppError("Slow down a moment");
-        const message = store.deleteMessage(code, memberId, String(id));
+        const { message, attachmentId } = store.deleteMessage(code, memberId, String(id));
         io.to(code).emit("msg:patch", { id: message.id, deleted: true, body: "" });
+        // Take the bytes with it, otherwise the file stays fetchable by anyone
+        // who kept the link, and keeps occupying the room's quota.
+        if (attachmentId) void removeUpload(code, attachmentId);
         return null;
       }),
     );

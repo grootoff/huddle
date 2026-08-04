@@ -26,8 +26,25 @@ export function prettyRoomCode(code: string): string {
   return code.length === 8 ? `${code.slice(0, 4)} ${code.slice(4)}` : code;
 }
 
-/** Upload ceiling, enforced client-side (fail fast) and server-side (truth). */
-export const MAX_FILE_BYTES = 100 * 1024 * 1024;
+/**
+ * The limit the UI advertises and fails fast against. Inlined at build time, so
+ * it is a label, not enforcement — src/lib/limits.ts is the server's authority and
+ * is read at runtime. Keep them in step by setting NEXT_PUBLIC_HUDDLE_MAX_FILE_MB
+ * before `npm run build`, or by setting both it and HUDDLE_MAX_FILE_MB.
+ */
+const requestedFileMb = Number(process.env.NEXT_PUBLIC_HUDDLE_MAX_FILE_MB);
+export const MAX_FILE_MB =
+  Number.isFinite(requestedFileMb) && requestedFileMb > 0 ? Math.min(requestedFileMb, 4096) : 100;
+export const MAX_FILE_BYTES = Math.round(MAX_FILE_MB * 1024 * 1024);
+
+/**
+ * Total disk one room may hold, as advertised to the UI. The per-file cap alone
+ * bounds nothing: fifty 99 MB videos are fifty legal uploads. Enforced by
+ * src/lib/limits.ts at runtime; 0 disables the check.
+ */
+const requestedQuotaMb = Number(process.env.NEXT_PUBLIC_HUDDLE_ROOM_QUOTA_MB);
+export const ROOM_QUOTA_MB = Number.isFinite(requestedQuotaMb) && requestedQuotaMb >= 0 ? requestedQuotaMb : 1024;
+export const ROOM_QUOTA_BYTES = Math.round(ROOM_QUOTA_MB * 1024 * 1024);
 export const MAX_MESSAGE_CHARS = 4000;
 export const MAX_NAME_CHARS = 32;
 export const MAX_ROOM_NAME_CHARS = 48;
