@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+/* Dark mode is a class on <html> so the toggle can override the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --animate-pop: pop 0.18s ease-out;
+  --animate-rise: rise 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-zinc-100 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  /* Keep the chat pinned when a mobile keyboard opens. */
+  overscroll-behavior-y: none;
+}
+
+/* Faint dot grid behind the message list — quieter than a photo wallpaper. */
+.chat-canvas {
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 22px 22px;
+  @apply text-zinc-900/[0.045] dark:text-white/[0.05];
+}
+
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, currentColor 25%, transparent) transparent;
+}
+
+.scroll-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scroll-slim::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: color-mix(in oklab, currentColor 22%, transparent);
+}
+
+/* Message text: keep user newlines, wrap long unbroken links. */
+.msg-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+/* iOS zooms in on inputs under 16px. */
+@media (max-width: 640px) {
+  input,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
