@@ -5,7 +5,7 @@ import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { getBridge } from "@/lib/bridge";
-import { MAX_FILE_BYTES } from "@/lib/constants";
+import { MAX_FILE_BYTES, ROOM_CODE_PATTERN, normalizeRoomCode } from "@/lib/constants";
 import type { Attachment, AttachmentKind } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -20,9 +20,10 @@ export async function PUT(request: Request): Promise<Response> {
   const bridge = getBridge();
   if (!bridge) return bad(503, "Server is still starting up");
 
-  const roomCode = (request.headers.get("x-huddle-room") ?? "").replace(/\D/g, "");
+  const roomCode = normalizeRoomCode(request.headers.get("x-huddle-room") ?? "");
   const token = request.headers.get("x-huddle-token") ?? "";
-  if (!/^\d{6}$/.test(roomCode)) return bad(400, "Bad room code");
+  // The pattern is also what keeps the code safe to use as a directory name.
+  if (!ROOM_CODE_PATTERN.test(roomCode)) return bad(400, "Bad room code");
   if (!bridge.roomExists(roomCode)) return bad(404, "That huddle no longer exists");
   if (!token || !bridge.memberIdForToken(roomCode, token)) return bad(401, "Join the huddle before uploading");
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { prettyRoomCode } from "@/lib/constants";
 import type { Member, RoomInfo } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { ThemeToggle } from "./ThemeToggle";
@@ -46,7 +47,7 @@ export function ChatHeader({
               {room.locked && <LockIcon width={13} height={13} className="shrink-0 text-amber-500" />}
             </span>
             <span className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-              <span className="font-mono tracking-wider">{room.code}</span>
+              <span className="font-mono tracking-wider">{prettyRoomCode(room.code)}</span>
               <span aria-hidden="true">·</span>
               <span className="truncate">{subtitle}</span>
             </span>

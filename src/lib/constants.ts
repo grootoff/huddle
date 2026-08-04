@@ -1,5 +1,31 @@
 /** Values shared by the server and the browser. Kept dependency-free. */
 
+/**
+ * A room code is both the address and the secret, so it is long enough not to be
+ * guessable (33^8 ≈ 1.4e12) while staying readable out loud. I, L and O are left
+ * out because they are indistinguishable from 1 and 0 on a phone screen.
+ */
+export const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ0123456789";
+export const ROOM_CODE_LENGTH = 8;
+export const ROOM_CODE_PATTERN = /^[A-HJ-KM-NP-Z0-9]{8}$/;
+
+/** Forgiving input cleanup: upper-cases and folds the confusable letters. */
+export function normalizeRoomCode(raw: string): string {
+  return raw
+    .toUpperCase()
+    .replace(/O/g, "0")
+    .replace(/[IL]/g, "1")
+    .split("")
+    .filter((char) => ROOM_CODE_ALPHABET.includes(char))
+    .join("")
+    .slice(0, ROOM_CODE_LENGTH);
+}
+
+/** "8GNY S8UT" — easier to read back to someone across a room. */
+export function prettyRoomCode(code: string): string {
+  return code.length === 8 ? `${code.slice(0, 4)} ${code.slice(4)}` : code;
+}
+
 /** Upload ceiling, enforced client-side (fail fast) and server-side (truth). */
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_MESSAGE_CHARS = 4000;

@@ -1,6 +1,12 @@
 import { db } from "./db.ts";
-import { colorFor, hashPasskey, hashToken, newId, newRoomCode, newToken, verifyPasskey } from "./ids.ts";
-import { HISTORY_LIMIT, MAX_MESSAGE_CHARS, MAX_NAME_CHARS, MAX_ROOM_NAME_CHARS } from "../src/lib/constants.ts";
+import { colorFor, hashToken, newId, newRoomCode, newToken } from "./ids.ts";
+import {
+  HISTORY_LIMIT,
+  MAX_MESSAGE_CHARS,
+  MAX_NAME_CHARS,
+  MAX_ROOM_NAME_CHARS,
+  normalizeRoomCode,
+} from "../src/lib/constants.ts";
 import type {
   Attachment,
   Member,
@@ -42,7 +48,6 @@ function toRoomInfo(row: Row): RoomInfo {
     name: str(row.name),
     hostId: str(row.host_id),
     locked: bool(row.locked),
-    hasPasskey: typeof row.passkey_hash === "string" && row.passkey_hash.length > 0,
     createdAt: num(row.created_at),
   };
 }
@@ -61,7 +66,6 @@ export function peekRoom(code: string): RoomPeek | null {
   return {
     code: str(row.code),
     name: str(row.name),
-    hasPasskey: typeof row.passkey_hash === "string" && row.passkey_hash.length > 0,
     locked: bool(row.locked),
     memberCount: num(count?.n),
   };
@@ -79,15 +83,14 @@ export interface Session {
   notice: Message | null;
 }
 
-export function createRoom(input: { roomName: string; displayName: string; passkey?: string }): Session {
+export function createRoom(input: { roomName: string; displayName: string }): Session {
   const displayName = clean(input.displayName, MAX_NAME_CHARS) || fail("Please enter your name");
   const roomName = clean(input.roomName, MAX_ROOM_NAME_CHARS) || "Huddle";
-  const passkey = input.passkey?.trim() ?? "";
 
   const now = Date.now();
   const hostId = newId();
 
-  // Codes are short, so retry on the (unlikely) collision.
+  // Collisions are vanishingly unlikely, but a code must never be reused.
   let code = "";
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const candidate = newRoomCode();
@@ -98,9 +101,12 @@ export function createRoom(input: { roomName: string; displayName: string; passk
   }
   if (!code) fail("Could not allocate a room code — try again");
 
-  db.prepare(
-    "INSERT INTO rooms (code, name, passkey_hash, host_id, locked, created_at) VALUES (?, ?, ?, ?, 0, ?)",
-  ).run(code, roomName, passkey ? hashPasskey(passkey) : null, hostId, now);
+  db.prepare("INSERT INTO rooms (code, name, host_id, locked, created_at) VALUES (?, ?, ?, 0, ?)").run(
+    code,
+    roomName,
+    hostId,
+    now,
+  );
 
   const token = insertMember({ id: hostId, code, name: displayName, isHost: true, now });
   const notice = systemMessage(code, `${displayName} created this huddle`);
@@ -108,17 +114,12 @@ export function createRoom(input: { roomName: string; displayName: string; passk
   return { room: getRoom(code)!, member: getMember(hostId)!, token, notice };
 }
 
-export function joinRoom(input: {
-  code: string;
-  displayName: string;
-  passkey?: string;
-  token?: string;
-}): Session {
-  const code = input.code.replace(/\D/g, "");
+export function joinRoom(input: { code: string; displayName: string; token?: string }): Session {
+  const code = normalizeRoomCode(input.code);
   const row = roomRow(code) ?? fail("No huddle with that code");
   const room = toRoomInfo(row);
 
-  // Returning member: the token is proof of identity, so skip the passkey.
+  // Returning member: the token proves identity even if the room is now locked.
   if (input.token) {
     const existing = db
       .prepare("SELECT * FROM members WHERE room_code = ? AND token_hash = ?")
@@ -133,13 +134,6 @@ export function joinRoom(input: {
 
   const displayName = clean(input.displayName, MAX_NAME_CHARS) || fail("Please enter your name");
   if (room.locked) fail("The host has locked this huddle");
-
-  const storedHash = str(row.passkey_hash, "");
-  if (storedHash) {
-    const supplied = input.passkey?.trim() ?? "";
-    if (!supplied) fail("This huddle needs a key");
-    if (!verifyPasskey(supplied, storedHash)) fail("That key is not right");
-  }
 
   const now = Date.now();
   const id = newId();

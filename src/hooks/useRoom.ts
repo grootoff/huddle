@@ -34,7 +34,7 @@ export interface RoomApi {
   members: Member[];
   messages: ChatMessage[];
   typers: Typer[];
-  join: (input: { displayName: string; passkey?: string }) => Promise<void>;
+  join: (input: { displayName: string }) => Promise<void>;
   send: (input: { body: string; replyToId?: string | null }) => void;
   sendFiles: (files: File[], replyToId?: string | null) => void;
   sendVoice: (blob: Blob, durationSeconds: number) => void;
@@ -98,7 +98,7 @@ export function useRoom(code: string): RoomApi {
   /* ------------------------------ connection ------------------------------ */
 
   const attemptJoin = useCallback(
-    async (input: { displayName: string; passkey?: string; token?: string }, silent: boolean): Promise<void> => {
+    async (input: { displayName: string; token?: string }, silent: boolean): Promise<void> => {
       const socket = socketRef.current;
       if (!socket) return;
       if (!silent) setPhaseSafe("joining");
@@ -259,7 +259,7 @@ export function useRoom(code: string): RoomApi {
   /* -------------------------------- actions ------------------------------- */
 
   const join = useCallback(
-    async (input: { displayName: string; passkey?: string }) => {
+    async (input: { displayName: string }) => {
       await attemptJoin(input, false);
     },
     [attemptJoin],

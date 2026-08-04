@@ -1,4 +1,5 @@
 import QRCode from "qrcode";
+import { normalizeRoomCode } from "@/lib/constants";
 import { lanAddresses } from "../../../../server/net.ts";
 
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const code = (url.searchParams.get("code") ?? "").replace(/\D/g, "");
+  const code = normalizeRoomCode(url.searchParams.get("code") ?? "");
 
   const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host;
   const [hostname, port = url.port || "4000"] = splitHost(forwardedHost);

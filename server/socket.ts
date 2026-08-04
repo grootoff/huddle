@@ -2,7 +2,14 @@ import type { DefaultEventsMap, Server, Socket } from "socket.io";
 import { z } from "zod";
 import * as store from "./store.ts";
 import { AppError } from "./store.ts";
-import { MAX_MESSAGE_CHARS, MAX_NAME_CHARS, MAX_ROOM_NAME_CHARS, REACTION_EMOJIS } from "../src/lib/constants.ts";
+import {
+  MAX_MESSAGE_CHARS,
+  MAX_NAME_CHARS,
+  MAX_ROOM_NAME_CHARS,
+  REACTION_EMOJIS,
+  ROOM_CODE_PATTERN,
+  normalizeRoomCode,
+} from "../src/lib/constants.ts";
 import type { Ack, ClientToServerEvents, Member, ServerToClientEvents, SocketData } from "../src/lib/types.ts";
 
 type HuddleServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
@@ -48,13 +55,16 @@ const attachmentSchema = z.object({
 const createSchema = z.object({
   roomName: z.string().max(MAX_ROOM_NAME_CHARS).default(""),
   displayName: z.string().min(1).max(MAX_NAME_CHARS),
-  passkey: z.string().max(64).optional(),
 });
 
 const joinSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, "Codes are 6 digits"),
+  // Normalised first so "8gnys8ut" and "8GNYS8UT" are the same room.
+  code: z
+    .string()
+    .max(32)
+    .transform(normalizeRoomCode)
+    .refine((code) => ROOM_CODE_PATTERN.test(code), "Room codes are 8 characters"),
   displayName: z.string().max(MAX_NAME_CHARS).default(""),
-  passkey: z.string().max(64).optional(),
   token: z.string().max(128).optional(),
 });
 
@@ -129,7 +139,7 @@ export function attachSocketServer(io: HuddleServer): void {
 
     socket.on("room:peek", (code, ack) =>
       reply(ack, () => {
-        const peek = store.peekRoom(String(code ?? "").replace(/\D/g, ""));
+        const peek = store.peekRoom(normalizeRoomCode(String(code ?? "")));
         if (!peek) throw new AppError("No huddle with that code");
         return { ...peek, memberCount: onlineIn(peek.code).size || peek.memberCount };
       }),

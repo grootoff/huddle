@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { getBridge } from "@/lib/bridge";
+import { ROOM_CODE_PATTERN } from "@/lib/constants";
 import type { Attachment } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -25,7 +26,7 @@ export async function GET(
   if (!bridge) return new Response("Starting up", { status: 503 });
 
   const { code, id } = await context.params;
-  if (!/^\d{6}$/.test(code)) return new Response("Not found", { status: 404 });
+  if (!ROOM_CODE_PATTERN.test(code)) return new Response("Not found", { status: 404 });
   // Ids are server-generated UUIDs; the check also blocks path traversal.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) {
     return new Response("Not found", { status: 404 });

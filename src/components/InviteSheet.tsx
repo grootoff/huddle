@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { copyText } from "@/lib/clipboard";
-import { loadHostKey } from "@/lib/session";
-import { CopyIcon, LockIcon } from "./icons";
-import { Button, Modal, Spinner, cx } from "./ui";
+import { prettyRoomCode } from "@/lib/constants";
+import { CopyIcon } from "./icons";
+import { Modal, Spinner, cx } from "./ui";
 
 interface NetInfo {
   origin: string;
@@ -18,21 +18,18 @@ interface NetInfo {
 export function InviteSheet({
   code,
   roomName,
-  isHost,
   open,
   onClose,
   onCopied,
 }: {
   code: string;
   roomName: string;
-  isHost: boolean;
   open: boolean;
   onClose: () => void;
   onCopied: (message: string) => void;
 }) {
   const [net, setNet] = useState<NetInfo | null>(null);
   const [failed, setFailed] = useState(false);
-  const hostKey = isHost ? loadHostKey(code) : "";
 
   useEffect(() => {
     if (!open || net) return;
@@ -59,27 +56,17 @@ export function InviteSheet({
       <div className="space-y-4">
         <div className="rounded-xl bg-zinc-100 p-4 text-center dark:bg-zinc-800/70">
           <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">Room code</p>
-          <p className="mt-1 font-mono text-4xl font-semibold tracking-[0.2em] tabular-nums">{code}</p>
+          <p className="mt-1 font-mono text-3xl font-semibold tracking-[0.15em] break-all">{prettyRoomCode(code)}</p>
           <button
             onClick={() => void copy(code, "Code")}
             className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-500 transition hover:text-teal-600"
           >
             <CopyIcon width={13} height={13} /> Copy code
           </button>
+          <p className="mt-2 text-[11px] text-zinc-500">
+            This code is the room&apos;s only secret — anyone who has it can walk in.
+          </p>
         </div>
-
-        {hostKey && (
-          <div className="flex items-center gap-3 rounded-xl border border-amber-300/70 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-500/10">
-            <LockIcon className="shrink-0 text-amber-600 dark:text-amber-400" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Join key (only you see this)</p>
-              <p className="truncate font-mono text-sm tracking-wider">{hostKey}</p>
-            </div>
-            <Button variant="subtle" size="sm" onClick={() => void copy(hostKey, "Key")}>
-              Copy
-            </Button>
-          </div>
-        )}
 
         <div className="flex flex-col items-center gap-3">
           {net ? (

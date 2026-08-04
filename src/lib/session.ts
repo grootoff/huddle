@@ -66,26 +66,6 @@ export function clearRoom(code: string): void {
   }
 }
 
-/**
- * The host's own copy of the key they set, so the invite panel can show it
- * later. Never leaves this device — the server only stores a scrypt hash.
- */
-export function saveHostKey(code: string, key: string): void {
-  try {
-    if (key) localStorage.setItem(`huddle:key:${code}`, key);
-  } catch {
-    /* ignore */
-  }
-}
-
-export function loadHostKey(code: string): string {
-  try {
-    return localStorage.getItem(`huddle:key:${code}`) ?? "";
-  } catch {
-    return "";
-  }
-}
-
 export function loadName(): string {
   try {
     return localStorage.getItem(NAME_KEY) ?? "";

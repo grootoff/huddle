@@ -4,22 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { copyText } from "@/lib/clipboard";
 import { ask, getSocket } from "@/lib/socket";
-import { listRooms, loadName, saveHostKey, saveName, saveRoom, type RecentRoom } from "@/lib/session";
-import { MAX_NAME_CHARS, MAX_ROOM_NAME_CHARS } from "@/lib/constants";
+import { listRooms, loadName, saveName, saveRoom, type RecentRoom } from "@/lib/session";
+import {
+  MAX_NAME_CHARS,
+  MAX_ROOM_NAME_CHARS,
+  ROOM_CODE_LENGTH,
+  ROOM_CODE_PATTERN,
+  normalizeRoomCode,
+  prettyRoomCode,
+} from "@/lib/constants";
 import type { RoomState } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { ThemeToggle } from "./ThemeToggle";
 import { Button, Field, Spinner, Toast, cx } from "./ui";
-import { LockIcon, SparkIcon, UsersIcon } from "./icons";
+import { UsersIcon } from "./icons";
 
 type Mode = "join" | "create";
-
-const KEY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
-function suggestKey(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  return Array.from(bytes, (b) => KEY_ALPHABET[b % KEY_ALPHABET.length]).join("");
-}
 
 export function Landing() {
   const router = useRouter();
@@ -27,8 +27,6 @@ export function Landing() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [roomName, setRoomName] = useState("");
-  const [passkey, setPasskey] = useState("");
-  const [wantsKey, setWantsKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -38,7 +36,8 @@ export function Landing() {
 
   useEffect(() => {
     setName(loadName());
-    setRecent(listRooms().slice(0, 4));
+    // Skip anything stored under an older code format — those rooms are gone.
+    setRecent(listRooms().filter((room) => ROOM_CODE_PATTERN.test(room.code)).slice(0, 4));
     getSocket(); // warm the connection while the user types
     fetch("/api/net")
       .then((res) => (res.ok ? res.json() : null))
@@ -52,9 +51,9 @@ export function Landing() {
 
   const handleJoin = async (event: React.FormEvent) => {
     event.preventDefault();
-    const digits = code.replace(/\D/g, "");
-    if (digits.length !== 6) {
-      setError("Room codes are 6 digits");
+    const wanted = normalizeRoomCode(code);
+    if (wanted.length !== ROOM_CODE_LENGTH) {
+      setError(`Room codes are ${ROOM_CODE_LENGTH} characters`);
       return;
     }
     if (!trimmedName) {
@@ -65,16 +64,16 @@ export function Landing() {
     setBusy(true);
     setError(null);
     try {
-      // Verify the code exists (and whether it needs a key) before navigating,
-      // so a typo is caught right here instead of on a blank room screen.
-      const peek = await ask<{ hasPasskey: boolean; locked: boolean }>(getSocket(), "room:peek", digits);
+      // Check the code exists before navigating, so a typo is caught right here
+      // instead of on a blank room screen.
+      const peek = await ask<{ locked: boolean }>(getSocket(), "room:peek", wanted);
       saveName(trimmedName);
       if (peek.locked) {
         setError("That huddle is locked by its host");
         setBusy(false);
         return;
       }
-      router.push(`/r/${digits}`);
+      router.push(`/r/${wanted}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not find that huddle");
       setBusy(false);
@@ -94,10 +93,8 @@ export function Landing() {
       const state = await ask<RoomState>(getSocket(), "room:create", {
         displayName: trimmedName,
         roomName: roomName.trim(),
-        passkey: wantsKey ? passkey.trim() : "",
       });
       saveName(trimmedName);
-      if (wantsKey && passkey.trim()) saveHostKey(state.room.code, passkey.trim());
       saveRoom(state.room.code, {
         token: state.token,
         name: state.me.name,
@@ -166,64 +163,30 @@ export function Landing() {
                   Room code
                 </span>
                 <input
-                  value={code}
-                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="000000"
-                  aria-label="6-digit room code"
-                  className="h-14 w-full rounded-xl border border-zinc-200 bg-white text-center font-mono text-2xl tracking-[0.45em] text-zinc-900 caret-teal-600 outline-none transition placeholder:text-zinc-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-700"
+                  value={prettyRoomCode(code)}
+                  onChange={(event) => setCode(normalizeRoomCode(event.target.value))}
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="ABCD 1234"
+                  aria-label={`${ROOM_CODE_LENGTH}-character room code`}
+                  className="h-14 w-full rounded-xl border border-zinc-200 bg-white text-center font-mono text-2xl tracking-[0.25em] text-zinc-900 uppercase caret-teal-600 outline-none transition placeholder:text-zinc-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-700"
                 />
+                <span className="mt-1.5 block text-xs text-zinc-500">
+                  {code.length}/{ROOM_CODE_LENGTH} — letters and numbers, case does not matter
+                </span>
               </div>
             ) : (
-              <>
-                <Field
-                  label="Huddle name"
-                  value={roomName}
-                  maxLength={MAX_ROOM_NAME_CHARS}
-                  placeholder="Design standup"
-                  onChange={(event) => setRoomName(event.target.value)}
-                  hint="Optional — shown at the top of the chat"
-                />
-
-                <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
-                  <label className="flex cursor-pointer items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={wantsKey}
-                      onChange={(event) => {
-                        setWantsKey(event.target.checked);
-                        if (event.target.checked && !passkey) setPasskey(suggestKey());
-                      }}
-                      className="mt-0.5 size-4 accent-teal-600"
-                    />
-                    <span>
-                      <span className="flex items-center gap-1.5 text-sm font-medium">
-                        <LockIcon width={15} height={15} /> Require a key to join
-                      </span>
-                      <span className="mt-0.5 block text-xs text-zinc-500">
-                        Anyone on the network can guess a 6-digit code — a key keeps it to your people.
-                      </span>
-                    </span>
-                  </label>
-
-                  {wantsKey && (
-                    <div className="mt-3 flex gap-2">
-                      <input
-                        value={passkey}
-                        onChange={(event) => setPasskey(event.target.value.slice(0, 64))}
-                        placeholder="Type or generate"
-                        aria-label="Join key"
-                        className="h-10 min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 font-mono text-sm tracking-wider outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-zinc-700 dark:bg-zinc-900"
-                      />
-                      <Button type="button" variant="subtle" size="sm" onClick={() => setPasskey(suggestKey())}>
-                        <SparkIcon width={15} height={15} />
-                        New
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </>
+              <Field
+                label="Huddle name"
+                value={roomName}
+                maxLength={MAX_ROOM_NAME_CHARS}
+                placeholder="Design standup"
+                onChange={(event) => setRoomName(event.target.value)}
+                hint="Optional — shown at the top of the chat"
+              />
             )}
 
             {error && (
@@ -236,6 +199,13 @@ export function Landing() {
               {busy && <Spinner />}
               {mode === "join" ? "Join huddle" : "Create huddle"}
             </Button>
+
+            {mode === "create" && (
+              <p className="text-center text-xs text-zinc-400">
+                You&apos;ll get a code like <span className="font-mono">8GNY S8UT</span>. It is the room&apos;s only
+                secret, so share it the way you would a password.
+              </p>
+            )}
           </form>
         </div>
 
@@ -252,7 +222,7 @@ export function Landing() {
                     <Avatar name={room.roomName || room.code} color="#0d9488" size={34} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{room.roomName || "Huddle"}</span>
-                      <span className="block font-mono text-xs text-zinc-500">{room.code}</span>
+                      <span className="block font-mono text-xs text-zinc-500">{prettyRoomCode(room.code)}</span>
                     </span>
                     <span className="text-xs text-zinc-400">as {room.name}</span>
                   </button>

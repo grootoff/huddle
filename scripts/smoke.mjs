@@ -3,15 +3,14 @@
  *
  *   node scripts/smoke.mjs [http://localhost:4000]
  *
- * Drives two real socket clients through the whole flow: create, key-protected
- * join, chat, reactions, receipts, a raw-body upload, ranged download, lock and
- * kick. Exits non-zero on the first failure.
+ * Drives two real socket clients through the whole flow: create, join, chat,
+ * reactions, receipts, a raw-body upload, ranged download, lock and kick.
+ * Exits non-zero on the first failure.
  */
 import assert from "node:assert/strict";
 import { io } from "socket.io-client";
 
 const ORIGIN = process.argv[2] ?? "http://localhost:4000";
-const KEY = "SMOKE-KEY-42";
 
 let passed = 0;
 const check = (label, fn) => {
@@ -71,32 +70,30 @@ const run = async () => {
   const created = await ask(host, "room:create", {
     displayName: "Hosty",
     roomName: "Smoke Room",
-    passkey: KEY,
   });
   const code = created.room.code;
-  check("host creates a room with a 6-digit code", () => {
-    assert.match(code, /^\d{6}$/);
-    assert.equal(created.room.hasPasskey, true);
+  check("host creates a room with an 8-character code", () => {
+    assert.match(code, /^[A-HJ-KM-NP-Z0-9]{8}$/);
     assert.equal(created.me.isHost, true);
     assert.ok(created.token);
   });
 
   const peek = await ask(guest, "room:peek", code);
-  check("peek reports the key requirement without joining", () => {
-    assert.equal(peek.hasPasskey, true);
+  check("peek describes the room without joining", () => {
     assert.equal(peek.name, "Smoke Room");
+    assert.equal(peek.locked, false);
   });
 
-  await expectFailure(ask(guest, "room:join", { code, displayName: "Guest" }), "needs a key");
-  await expectFailure(ask(guest, "room:join", { code, displayName: "Guest", passkey: "nope" }), "not right");
-  check("a wrong or missing key is rejected", () => {});
+  const lowered = await ask(guest, "room:peek", code.toLowerCase());
+  check("codes are case-insensitive", () => assert.equal(lowered.code, code));
 
-  await expectFailure(ask(guest, "room:join", { code: "000000", displayName: "Guest" }), "no huddle");
-  check("an unknown code is rejected", () => {});
+  await expectFailure(ask(guest, "room:join", { code: "ZZZZZZZZ", displayName: "Guest" }), "no huddle");
+  await expectFailure(ask(guest, "room:join", { code: "SHORT", displayName: "Guest" }), "8 characters");
+  check("an unknown or malformed code is rejected", () => {});
 
   const hostSawJoin = nextEvent(host, "msg:new");
-  const joined = await ask(guest, "room:join", { code, displayName: "Guesty", passkey: KEY });
-  check("guest joins with the right key", () => {
+  const joined = await ask(guest, "room:join", { code, displayName: "Guesty" });
+  check("guest joins with the code", () => {
     assert.equal(joined.me.name, "Guesty");
     assert.equal(joined.me.isHost, false);
     assert.equal(joined.members.length, 2);
@@ -242,7 +239,7 @@ const run = async () => {
   await lockNotice;
 
   const stranger = await connect();
-  await expectFailure(ask(stranger, "room:join", { code, displayName: "Late", passkey: KEY }), "locked");
+  await expectFailure(ask(stranger, "room:join", { code, displayName: "Late" }), "locked");
   check("locked rooms turn away new people", () => {});
   stranger.close();
 

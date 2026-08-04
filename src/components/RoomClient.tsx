@@ -231,7 +231,6 @@ export function RoomClient({ code }: { code: string }) {
       <InviteSheet
         code={code}
         roomName={api.room.name}
-        isHost={api.me.id === api.room.hostId}
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onCopied={setToast}

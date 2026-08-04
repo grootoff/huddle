@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MAX_NAME_CHARS } from "@/lib/constants";
+import { MAX_NAME_CHARS, prettyRoomCode } from "@/lib/constants";
 import { loadName } from "@/lib/session";
 import type { RoomPeek } from "@/lib/types";
-import { LockIcon, UsersIcon } from "./icons";
+import { UsersIcon } from "./icons";
 import { Button, Field, Spinner } from "./ui";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -24,10 +24,9 @@ export function JoinGate({
   peek: RoomPeek | null;
   error: string | null;
   busy: boolean;
-  onJoin: (input: { displayName: string; passkey?: string }) => void;
+  onJoin: (input: { displayName: string }) => void;
 }) {
   const [name, setName] = useState("");
-  const [passkey, setPasskey] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,7 +45,7 @@ export function JoinGate({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          onJoin({ displayName: name.trim(), passkey: passkey.trim() || undefined });
+          onJoin({ displayName: name.trim() });
         }}
         className="w-full max-w-sm rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-xl shadow-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900"
       >
@@ -55,11 +54,10 @@ export function JoinGate({
             <UsersIcon width={24} height={24} />
           </div>
           <h1 className="text-xl font-semibold">{peek?.name ?? "Join this huddle"}</h1>
-          <p className="mt-1 font-mono text-sm tracking-[0.3em] text-zinc-400">{code}</p>
+          <p className="mt-1 font-mono text-sm tracking-[0.2em] text-zinc-400">{prettyRoomCode(code)}</p>
           {peek && (
             <p className="mt-2 text-xs text-zinc-500">
               {peek.memberCount} {peek.memberCount === 1 ? "person" : "people"} inside
-              {peek.hasPasskey && " · key required"}
             </p>
           )}
         </div>
@@ -74,23 +72,6 @@ export function JoinGate({
             placeholder="How should people see you?"
             onChange={(event) => setName(event.target.value)}
           />
-
-          {peek?.hasPasskey && (
-            <Field
-              label="Join key"
-              value={passkey}
-              type="text"
-              autoComplete="off"
-              placeholder="Ask the host"
-              className="font-mono tracking-wider"
-              onChange={(event) => setPasskey(event.target.value)}
-              hint={
-                <span className="inline-flex items-center gap-1">
-                  <LockIcon width={12} height={12} /> This huddle is key-protected
-                </span>
-              }
-            />
-          )}
 
           {error && (
             <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">

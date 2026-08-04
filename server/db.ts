@@ -21,12 +21,11 @@ db.exec("PRAGMA busy_timeout = 5000");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS rooms (
-    code         TEXT PRIMARY KEY,
-    name         TEXT NOT NULL,
-    passkey_hash TEXT,
-    host_id      TEXT NOT NULL,
-    locked       INTEGER NOT NULL DEFAULT 0,
-    created_at   INTEGER NOT NULL
+    code       TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    host_id    TEXT NOT NULL,
+    locked     INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS members (
@@ -71,3 +70,11 @@ db.exec(`
     PRIMARY KEY (message_id, member_id)
   ) WITHOUT ROWID;
 `);
+
+// The separate join key was folded into the room code itself; drop the column if
+// this database predates that. CREATE TABLE IF NOT EXISTS cannot do it for us.
+try {
+  db.exec("ALTER TABLE rooms DROP COLUMN passkey_hash");
+} catch {
+  /* already gone, or a fresh database */
+}

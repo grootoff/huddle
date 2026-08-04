@@ -2,7 +2,7 @@
  * Simulates another person on the network — handy for trying the UI on your own
  * without a second device.
  *
- *   node scripts/guest.mjs <code> [name] [message] [--key KEY] [--stay 60]
+ *   node scripts/guest.mjs <code> [name] [message] [--stay 60]
  *
  * The guest joins, says something, reacts to and reads whatever it sees, then
  * stays connected so you can watch presence and typing indicators.
@@ -19,12 +19,12 @@ const flag = (name, fallback) => {
 };
 
 const origin = flag("origin", "http://localhost:4000");
-const key = flag("key", "");
 const stayFor = Number(flag("stay", "60"));
-const [code, name = "Priya", message = "Hello from another device"] = args;
+const [rawCode, name = "Priya", message = "Hello from another device"] = args;
+const code = (rawCode ?? "").toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1");
 
-if (!/^\d{6}$/.test(code ?? "")) {
-  console.error("usage: node scripts/guest.mjs <6-digit-code> [name] [message] [--key KEY] [--stay seconds]");
+if (!/^[A-HJ-KM-NP-Z0-9]{8}$/.test(code)) {
+  console.error("usage: node scripts/guest.mjs <8-char-code> [name] [message] [--stay seconds]");
   process.exit(1);
 }
 
@@ -41,7 +41,7 @@ const ask = (event, payload) =>
 
 socket.on("connect", async () => {
   try {
-    const state = await ask("room:join", { code, displayName: name, passkey: key || undefined });
+    const state = await ask("room:join", { code, displayName: name });
     console.log(`${name} joined "${state.room.name}" (${state.members.length} members)`);
 
     // Read everything already on screen, so the host sees blue ticks.

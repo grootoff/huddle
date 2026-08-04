@@ -56,11 +56,11 @@ export interface Message {
 }
 
 export interface RoomInfo {
+  /** Doubles as the room's secret — see ROOM_CODE_ALPHABET. */
   code: string;
   name: string;
   hostId: string;
   locked: boolean;
-  hasPasskey: boolean;
   createdAt: number;
 }
 
@@ -80,14 +80,11 @@ export type Ack<T> = (res: { ok: true; data: T } | { ok: false; error: string })
 export interface CreateRoomInput {
   roomName: string;
   displayName: string;
-  /** Optional join key set by the host. Empty/undefined = open room. */
-  passkey?: string;
 }
 
 export interface JoinRoomInput {
   code: string;
   displayName: string;
-  passkey?: string;
   /** Present when rejoining after a refresh. */
   token?: string;
 }
@@ -103,7 +100,6 @@ export interface SendMessageInput {
 export interface RoomPeek {
   code: string;
   name: string;
-  hasPasskey: boolean;
   locked: boolean;
   memberCount: number;
 }

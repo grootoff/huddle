@@ -1,9 +1,9 @@
 # Huddle
 
 A private, WhatsApp-style chat room for everyone on the same Wi-Fi. One person runs
-it, shares a 6-digit code (or a QR), and anyone on the network joins from a browser
-with just their name. No accounts, no cloud — messages and files never leave the
-machine that hosts it.
+it, shares an 8-character code like `8GNY S8UT` (or a QR), and anyone on the network
+joins from a browser with just their name. No accounts, no cloud — messages and files
+never leave the machine that hosts it.
 
 ```bash
 npm install
@@ -22,10 +22,12 @@ npm start            # PORT=4000 by default
 
 ## What it does
 
-**Rooms** — the host gets a random 6-digit code and can optionally set a join key
-(generated for them, or typed). Keys are stored as scrypt hashes; the host's own copy
-stays in their browser so the invite panel can show it. The host can lock the room
-once everyone has arrived, and remove people.
+**Rooms** — the host gets one 8-character code that is both the room's address and its
+only secret (33^8 ≈ 1.4 × 10¹² possibilities, drawn from a CSPRNG). `I`, `L` and `O` are
+left out of the alphabet because they are indistinguishable from `1` and `0` on a phone,
+and typing them is folded automatically, so `8gnys8ut`, `8GNYS8UT` and `8GNY S8UT` all
+open the same room. The host can lock the room once everyone has arrived, and remove
+people. Treat the code like a password: anyone who has it can walk in.
 
 **Joining** — nobody is anonymous: the name prompt comes before the room. The server
 issues a session token that the browser keeps, so a refresh (or a phone locking) drops
@@ -82,22 +84,66 @@ bridge (`src/lib/bridge.ts`) instead of opening a second connection.
 
 Rooms nobody has opened for two days are dropped automatically, files included.
 
+## Hosting it somewhere other than your laptop
+
+**Netlify and Vercel cannot run this**, and no config file will change that. Huddle is a
+single long-lived process that holds open WebSocket connections, keeps presence in
+memory, and writes SQLite plus uploaded files to a disk. Those platforms run stateless
+serverless functions: `server/index.ts` never boots, Functions do not accept WebSocket
+upgrades, and the filesystem is thrown away between invocations. The symptom is exactly
+what you would expect — the page loads and "create room" hangs, because the socket never
+connects.
+
+What works is anything that runs a container with a volume. A `Dockerfile` and a
+`fly.toml` are included:
+
+```bash
+fly launch --no-deploy                        # reads fly.toml
+fly volumes create huddle_data --size 3       # chat history + uploads live here
+fly deploy
+```
+
+Railway, Render (Docker + a persistent disk), Coolify, or a plain VPS behind Caddy work
+the same way. Two rules on any of them:
+
+- **One instance only.** Presence and typing live in memory and the database is a local
+  file, so a second replica would show a different set of rooms. Scale the machine up,
+  never out. `fly.toml` pins `max_machines_running = 1`.
+- **Mount a volume at `HUDDLE_DATA_DIR`** (`/data` in the container) or every redeploy
+  wipes the history and the uploads.
+
+A hosted deployment gets you HTTPS, which is also what makes **voice notes work on
+phones** — see the caveat below.
+
+If you only want a public link to something running on your own machine, a tunnel is
+less work than deploying and keeps the data local:
+
+```bash
+cloudflared tunnel --url http://localhost:4000     # or: ngrok http 4000
+```
+
+Either way, remember that a publicly reachable Huddle is open to anyone who has a room
+code, and any visitor can create rooms and upload up to 100 MB per file on your disk. On
+a LAN that is fine; on the open internet, put it behind Cloudflare Access or a reverse
+proxy with basic auth.
+
 ## Checking it works
 
 ```bash
-npm run smoke                          # 28 end-to-end checks against a running server
-npm run guest 812482 Priya "hello"     # pretend to be a second device
+npm run smoke                           # end-to-end checks against a running server
+npm run guest 8GNYS8UT Priya "hello"    # pretend to be a second device
 ```
 
-`smoke` drives two real socket clients through create, key-protected join, chat,
-reactions, receipts, upload, ranged download, lock, kick, token rejoin and rate
-limiting. `guest` is for eyeballing the UI when you only have one machine.
+`smoke` drives two real socket clients through create, join, case-insensitive codes,
+chat, replies, reactions, receipts, upload, ranged download, path traversal, delete
+permissions, lock, kick, token rejoin and rate limiting. `guest` is for eyeballing the
+UI when you only have one machine.
 
 ## Worth knowing
 
-- **It is plain HTTP on your LAN.** Anyone on the network who knows the code can join —
-  that is the point — so use a join key when it matters, and lock the room once everyone
-  is in. Do not port-forward it to the internet as-is.
+- **It is plain HTTP on your LAN.** The room code is the only secret and it travels in
+  the clear, so treat a huddle as private-ish, not confidential, and lock the room once
+  everyone is in. Do not port-forward it to the internet as-is — see the hosting section.
 - **Voice notes need a secure context.** Browsers only grant microphone access over
   https or on `localhost`, so on `http://192.168.…` the mic button explains itself and
   stops. Everything else (including file upload) works fine. Put it behind a local
@@ -114,4 +160,6 @@ limiting. `guest` is for eyeballing the UI when you only have one machine.
 End-to-end encryption between members, group voice/video with WebRTC (the signalling
 layer is already here), pinned messages, message editing, mDNS so people can type
 `huddle.local` instead of an IP, and a `--tls` flag that generates a local certificate
-so voice notes work everywhere.
+so voice notes work everywhere. If it ever needs to outgrow one machine, presence would
+move to Redis (Socket.IO has an adapter for it), SQLite to Postgres, and uploads to
+object storage — at which point serverless hosting becomes possible.
